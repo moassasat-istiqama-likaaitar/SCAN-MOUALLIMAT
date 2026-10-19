@@ -216,7 +216,7 @@
 </div>
 
 <script>
-const S = { pin:'', scanner:'', roster:{}, color:'#7B1FA2', present:new Set(), queue:[], sending:false, last:{ code:'', t:0 } };
+const S = { pin:'', scanner:'', roster:{}, colors:{}, present:new Set(), queue:[], sending:false, last:{ code:'', t:0 } };
 // بادئة خاصة بماسح المعلمات حتى لا يختلط بماسح المعلمين على نفس العنوان
 const store = {
   P: 'isf_scan_',
@@ -225,7 +225,7 @@ const store = {
 };
 const $ = id => document.getElementById(id);
 // ⚠️ رابط مشروع Apps Script «ماسح المعلمات» (ينتهي بـ /exec)
-const API = 'https://script.google.com/macros/s/AKfycbzEtjRvAGLp2hYsbKKbivqjH3N09JoLvqpt2st92mBCijU5XazrEZMx2JLfhBCkLrNf9w/exec';
+const API = 'ضع_رابط_exec_هنا';
 
 // إرسال طلب إلى Apps Script — نص عادي حتى لا يرفضه المتصفح (CORS)
 async function api(action, extra) {
@@ -240,7 +240,7 @@ async function api(action, extra) {
 }
 let AC = null;
 
-// roster[code] = [الاسم, اللقب, المدرسة, الوظيفة, اسم الأب]
+// roster[code] = [الاسم, اللقب, المدرسة, الوظيفة, اسم الأب, الورشة, المجموعة]
 const fullName = p => p[0] + ' ' + p[1];
 
 // استرجاع ما حُفظ في الهاتف
@@ -261,7 +261,7 @@ $('go').addEventListener('click', async () => {
     // بلا شبكة: نستعمل آخر قائمة محفوظة إن كان نفس الرمز
     const cache = store.get('roster', null);
     if (cache && savedLogin && savedLogin.pin === S.pin) {
-      S.roster = cache.roster; S.color = cache.color || S.color; setNet(false);
+      S.roster = cache.roster; S.colors = cache.colors || {}; setNet(false);
     } else {
       $('go').disabled = false; $('go').textContent = 'بدء المسح';
       return $('loginErr').textContent = /fetch|abort|network/i.test(e.message || '') ? 'تعذّر الاتصال — تحقّقي من الإنترنت' : (e.message || 'تعذّر الاتصال');
@@ -279,9 +279,9 @@ $('go').addEventListener('click', async () => {
 // ملء «الخزان»: كل المسجّلين في الهاتف
 async function loadRoster() {
   const d = await api('roster');
-  S.roster = d.roster; S.color = d.color || S.color;
+  S.roster = d.roster; S.colors = d.colors || {};
   syncPresent(d.present);
-  store.set('roster', { roster: d.roster, color: S.color });
+  store.set('roster', { roster: d.roster, colors: S.colors });
   savePresent(); setNet(true); updateStats();
 }
 
@@ -335,11 +335,15 @@ function show(kind, { p, code, male }) {
          + `<div class="l">${male ? 'هذه بطاقة لقاء المعلمين وليست بطاقة معلمة' : 'تُوجَّه إلى طاولة الاستقبال'}</div>`;
     last = `آخر مسح: ${ST} <b dir="ltr">${esc(code)}</b>`;
   } else {
-    const role = p[3] ? `<span class="ws" style="background:${esc(S.color)}">${esc(p[3])}</span>` : '';
-    html = `<div class="st">${ST}</div><div class="t">${esc(fullName(p))}</div>`
-         + `<div class="l">${role}</div><div class="sch">${esc(p[2] || '')}</div>`
+    // الورشة بلونها، والمجموعة (إن وُزّعت) أو صفة «مؤطِّرة»
+    const ws = p[5] || 'الورشة غير محددة', color = S.colors[p[5]], facil = /^مؤطر/.test(String(p[5] || '').trim());
+    const pill = color ? `<span class="ws" style="background:${esc(color)}">${esc(ws)}</span>` : esc(ws);
+    const box = facil ? `<div class="big"><div><small>الصفة</small><b>مؤطِّرة</b></div></div>`
+              : p[6] ? `<div class="big"><div><small>المجموعة</small><b>${esc(p[6])}</b></div></div>` : '';
+    html = `<div class="st">${ST}</div><div class="t">${esc(fullName(p))}</div><div class="l">${pill}</div>${box}`
+         + `<div class="sch">${esc(p[2] || '')}</div>`
          + (kind === 'warn' ? `<div class="l">سبق تسجيل دخولها</div>` : '');
-    last = `آخر مسح: ${ST} <b>${esc(fullName(p))}</b> · ${esc(p[2] || '')}`;
+    last = `آخر مسح: ${ST} <b>${esc(fullName(p))}</b>${facil ? ' · مؤطِّرة' : p[6] ? ' · المجموعة ' + esc(p[6]) : ''} · ${esc(p[2] || '')}`;
   }
   r.innerHTML = `<div>${html}</div>`;
   $('last').classList.remove('hidden'); $('last').innerHTML = last;
@@ -449,7 +453,7 @@ $('q').addEventListener('input', () => {
   matches.forEach(([c, p]) => {
     const d = document.createElement('div');
     d.innerHTML = `${S.present.has(c) ? '<span class="done">✔ </span>' : ''}<b>${esc(fullName(p))}</b>`
-      + ` <small>بنت ${esc(p[4])}</small><br><small>${esc(p[2])} — ${esc(p[3])} — ${c}</small>`;
+      + ` <small>بنت ${esc(p[4])}</small><br><small>${esc(p[2])} — ${esc(p[5] || p[3])} — ${c}</small>`;
     d.addEventListener('click', () => pick(c));
     list.appendChild(d);
   });
